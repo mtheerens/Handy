@@ -428,6 +428,38 @@ mod headless_guard_tests {
     }
 }
 
+fn forwarded_language(args: &[String]) -> Option<Result<String, String>> {
+    for (index, arg) in args.iter().enumerate() {
+        if let Some(value) = arg.strip_prefix("--language=") {
+            return Some(crate::cli::parse_language_code(value));
+        }
+        if arg == "--language" {
+            return Some(
+                args.get(index + 1)
+                    .ok_or_else(|| "--language requires a language code".to_string())
+                    .and_then(|value| crate::cli::parse_language_code(value)),
+            );
+        }
+    }
+    None
+}
+
+fn set_selected_language(app: &AppHandle, language: &str) -> Result<(), String> {
+    let language = crate::cli::parse_language_code(language)?;
+    let mut settings = settings::get_settings(app);
+    settings.selected_language = language.clone();
+    settings::write_settings(app, settings);
+    app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "selected_language",
+            "value": language,
+        }),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 /// Headless one-shot transcription for the `--transcribe-file` / `--list-devices`
 /// path. Drives the same `TranscriptionManager::transcribe` the app uses; no
 /// mic, no VAD, no download. Returns a process exit code (0 ok, 1 runtime
@@ -503,6 +535,12 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     let Some(wav) = args.transcribe_file.clone() else {
         return 0;
     };
+
+    if let Some(language) = &args.language {
+        let mut settings = get_settings(app);
+        settings.selected_language = language.clone();
+        settings::write_settings(app, settings);
+    }
 
     // read_wav_samples reads 16-bit int samples and does no validation; the app
     // only ever saves 16 kHz mono 16-bit PCM, so reject anything else rather than
@@ -874,13 +912,28 @@ pub fn run(cli_args: CliArgs) {
     // instance instead.
     if !headless_mode {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let language = forwarded_language(&args);
+            if let Some(language) = language {
+                match language {
+                    Ok(language) => {
+                        if let Err(error) = set_selected_language(app, &language) {
+                            log::error!("Failed to apply forwarded --language: {error}");
+                        }
+                    }
+                    Err(error) => log::error!("Invalid forwarded --language: {error}"),
+                }
+            }
+
             if args.iter().any(|a| a == "--toggle-transcription") {
                 signal_handle::send_transcription_input(app, "transcribe", "CLI");
             } else if args.iter().any(|a| a == "--toggle-post-process") {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
-            } else {
+            } else if !args
+                .iter()
+                .any(|a| a == "--language" || a.starts_with("--language="))
+            {
                 // A second process was launched without remote-control flags
                 // (e.g. the binary run from a shell). On macOS, relaunching the
                 // bundle from Spotlight/Finder/Dock does not start a process —
@@ -1023,6 +1076,10 @@ pub fn run(cli_args: CliArgs) {
             }
 
             let mut settings = get_settings(app.handle());
+            if let Some(language) = &cli_args.language {
+                settings.selected_language = language.clone();
+                settings::write_settings(app.handle(), settings.clone());
+            }
 
             // Apply the persisted appearance theme to the native title bar before
             // the window is shown, so it matches the in-app palette without a flash

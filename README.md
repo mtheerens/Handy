@@ -104,11 +104,16 @@ handy --cancel                  # Cancel the current operation
 **Startup flags:**
 
 ```bash
+handy --language fr             # Select French (use --language auto for Auto)
 handy --start-hidden            # Start without showing the main window
 handy --no-tray                 # Start without the system tray icon
 handy --debug                   # Enable debug mode with verbose logging
 handy --help                    # Show all available flags
 ```
+
+`--language` updates the persisted transcription language selection. If Handy is
+already running, the selection is forwarded to that instance; otherwise it is
+applied at startup. Pass a BCP-47 code such as `fr` or `zh-Hant`, or `auto`.
 
 Flags can be combined for autostart scenarios:
 

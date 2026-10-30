@@ -4,6 +4,11 @@ use std::path::PathBuf;
 #[derive(Parser, Debug, Clone, Default)]
 #[command(name = "handy", about = "Handy - Speech to Text")]
 pub struct CliArgs {
+    /// Select the transcription language, or use `auto` for language detection.
+    /// The selection is persisted and forwarded to an already-running instance.
+    #[arg(long, value_name = "CODE", value_parser = parse_language_code)]
+    pub language: Option<String>,
+
     /// Start with the main window hidden
     #[arg(long)]
     pub start_hidden: bool,
@@ -61,4 +66,50 @@ pub struct CliArgs {
     /// Emit --transcribe-file results as JSON.
     #[arg(long)]
     pub json: bool,
+}
+
+pub fn parse_language_code(value: &str) -> Result<String, String> {
+    if value.eq_ignore_ascii_case("auto") {
+        return Ok("auto".to_string());
+    }
+
+    let mut subtags = value.split('-');
+    let primary = subtags.next().unwrap_or_default();
+    if !(2..=8).contains(&primary.len())
+        || !primary.bytes().all(|b| b.is_ascii_alphabetic())
+    {
+        return Err("language must be `auto` or a BCP-47 language code".to_string());
+    }
+    if subtags.any(|subtag| {
+        subtag.is_empty()
+            || subtag.len() > 8
+            || !subtag.bytes().all(|b| b.is_ascii_alphanumeric())
+    }) {
+        return Err("language must be `auto` or a BCP-47 language code".to_string());
+    }
+
+    Ok(value.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_language_code, CliArgs};
+    use clap::Parser;
+
+    #[test]
+    fn parses_language_argument() {
+        let args = CliArgs::try_parse_from(["handy", "--language", "zh-Hant"])
+            .expect("language argument should parse");
+
+        assert_eq!(args.language.as_deref(), Some("zh-Hant"));
+    }
+
+    #[test]
+    fn validates_language_codes() {
+        assert_eq!(parse_language_code("AUTO").unwrap(), "auto");
+        assert_eq!(parse_language_code("fr").unwrap(), "fr");
+        assert_eq!(parse_language_code("zh-Hant").unwrap(), "zh-Hant");
+        assert!(parse_language_code("bad_code").is_err());
+        assert!(parse_language_code("-fr").is_err());
+    }
 }

@@ -37,7 +37,6 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   supportedLanguages,
 }) => {
   const { t, i18n } = useTranslation();
-  const { getSetting, updateSetting, resetSetting, isUpdating } = useSettings();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -46,7 +45,6 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   // The persisted *intent* (auto | code). What's shown is what transcription
   // will actually use, which the backend resolves from the same policy.
   const intent = getSetting("selected_language") || "auto";
-  const spoken = getSetting("spoken_languages");
   const detectionMode = getSetting("language_detection");
   const spokenKey = spoken?.join(",");
   const [status, setStatus] = useState<LanguageStatus | null>(null);
